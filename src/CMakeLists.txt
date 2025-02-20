@@ -1,4 +1,4 @@
-# Allow the source files to find headers in src/
+#Allow the source files to find headers in src /
 include(GNUInstallDirs)
 include_directories(${PROJECT_SOURCE_DIR}/src)
 
@@ -25,12 +25,25 @@ set_target_properties(benchmark PROPERTIES
   SOVERSION ${GENERIC_LIB_SOVERSION}
 )
 target_include_directories(benchmark PUBLIC
-  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+)
+
+set_property(
+  SOURCE benchmark.cc
+  APPEND
+  PROPERTY COMPILE_DEFINITIONS
+  BENCHMARK_VERSION="${VERSION}"
+)
 
 # libpfm, if available
-if (HAVE_LIBPFM)
-  target_link_libraries(benchmark PRIVATE pfm)
-  add_definitions(-DHAVE_LIBPFM)
+if (PFM_FOUND)
+  target_link_libraries(benchmark PRIVATE PFM::libpfm)
+  target_compile_definitions(benchmark PRIVATE -DHAVE_LIBPFM)
+endif()
+
+# pthread affinity, if available
+if(HAVE_PTHREAD_AFFINITY)
+  target_compile_definitions(benchmark PRIVATE -DBENCHMARK_HAS_PTHREAD_AFFINITY)
 endif()
 
 # Link threads.
@@ -51,6 +64,11 @@ endif()
 # We need extra libraries on Solaris
 if(${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
   target_link_libraries(benchmark PRIVATE kstat)
+  set(BENCHMARK_PRIVATE_LINK_LIBRARIES -lkstat)
+endif()
+
+if (NOT BUILD_SHARED_LIBS)
+  target_compile_definitions(benchmark PUBLIC -DBENCHMARK_STATIC_DEFINE)
 endif()
 
 # Benchmark main library
@@ -60,15 +78,16 @@ set_target_properties(benchmark_main PROPERTIES
   OUTPUT_NAME "benchmark_main"
   VERSION ${GENERIC_LIB_VERSION}
   SOVERSION ${GENERIC_LIB_SOVERSION}
+  DEFINE_SYMBOL benchmark_EXPORTS
 )
 target_link_libraries(benchmark_main PUBLIC benchmark::benchmark)
-
 
 set(generated_dir "${PROJECT_BINARY_DIR}")
 
 set(version_config "${generated_dir}/${PROJECT_NAME}ConfigVersion.cmake")
 set(project_config "${generated_dir}/${PROJECT_NAME}Config.cmake")
 set(pkg_config "${generated_dir}/${PROJECT_NAME}.pc")
+set(pkg_config_main "${generated_dir}/${PROJECT_NAME}_main.pc")
 set(targets_to_export benchmark benchmark_main)
 set(targets_export_name "${PROJECT_NAME}Targets")
 
@@ -88,6 +107,7 @@ write_basic_package_version_file(
 )
 
 configure_file("${PROJECT_SOURCE_DIR}/cmake/benchmark.pc.in" "${pkg_config}" @ONLY)
+configure_file("${PROJECT_SOURCE_DIR}/cmake/benchmark_main.pc.in" "${pkg_config_main}" @ONLY)
 
 export (
   TARGETS ${targets_to_export}
@@ -107,6 +127,7 @@ if (BENCHMARK_ENABLE_INSTALL)
 
   install(
     DIRECTORY "${PROJECT_SOURCE_DIR}/include/benchmark"
+              "${PROJECT_BINARY_DIR}/include/benchmark"
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.*h")
 
@@ -115,7 +136,7 @@ if (BENCHMARK_ENABLE_INSTALL)
       DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
 
   install(
-      FILES "${pkg_config}"
+      FILES "${pkg_config}" "${pkg_config_main}"
       DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
 
   install(
